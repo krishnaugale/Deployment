@@ -1,0 +1,33 @@
+#!/bin/bash
+
+NETWORK_NAME="rtsp-application-net"
+
+# Check if the network already exists
+if [ -z "$(docker network ls --filter name=${NETWORK_NAME} --quiet)" ]; then
+  echo "Creating network: ${NETWORK_NAME}"
+  docker network create ${NETWORK_NAME}
+else
+  echo "Network ${NETWORK_NAME} already exists. Skipping network creation."
+fi
+
+# Remove and recreate containers
+docker rm -f mdb kafka zookeeper keydb rabbitmq
+
+# Zookeeper
+docker run -d --name zookeeper --network ${NETWORK_NAME} -p 2181:2181 zookeeper:latest
+
+# Kafka
+docker run -d --name kafka --network ${NETWORK_NAME} -p 9092:9092 \
+  -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 \
+  -e KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092 \
+  -e KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181 \
+  -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 wurstmeister/kafka:latest
+
+# MariaDB
+docker run -p 0.0.0.0:3306:3306 --name mdb --network ${NETWORK_NAME} -e MARIADB_ROOT_PASSWORD=password -d mariadb:10.4
+
+# KeyDB
+docker run -d --name keydb --network ${NETWORK_NAME} -p 6380:6379 eqalpha/keydb
+
+# RabbitMQ
+docker run -d --name rabbitmq --network ${NETWORK_NAME} -p 5672:5672 -p 15672:15672 rabbitmq
